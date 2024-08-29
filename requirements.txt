@@ -1,0 +1,10 @@
+farm-haystack
+transformers
+torch
+elasticsearch
+pypdf
+python-docx
+python-pptx
+beautifulsoup4
+lxml
+Flask
