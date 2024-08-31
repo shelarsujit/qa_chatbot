@@ -1,4 +1,4 @@
-from haystack.nodes import PromptNode, PromptTemplate
+from haystack.nodes import EmbeddingRetriever, PromptNode, PromptTemplate
 from transformers import pipeline as hf_pipeline
 
 def get_prompt_node():
@@ -16,4 +16,4 @@ Question: {query}
 Answer:"""
     )
 
-    return PromptNode(model_name_or_path=model_name, default_prompt_template="question-answering", use_gpu=True)
+    return PromptNode(model_name_or_path=model_name, default_prompt_template="question-answering", use_gpu=False)

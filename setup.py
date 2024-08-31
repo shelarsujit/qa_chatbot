@@ -6,10 +6,10 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
-        "farm-haystack==1.15.0",
-        "transformers==4.28.1",
-        "torch==1.13.1",
-        "elasticsearch==7.17.9"
+        "haystack-ai",
+        "transformers",
+        "torch",
+        "elasticsearch"
     ],
     entry_points={
         "console_scripts": [
@@ -24,7 +24,7 @@ setup(
     url="https://github.com/shelarsujit/qa_chatbot",
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        # "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
     python_requires=">=3.7",

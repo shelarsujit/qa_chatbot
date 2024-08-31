@@ -3,32 +3,76 @@ from pypdf import PdfReader
 from docx import Document
 from pptx import Presentation
 from bs4 import BeautifulSoup
-from haystack.pipelines import Pipeline
-from haystack.utils import print_answers
-from .document_store import get_document_store
-from .retriever import get_retriever
-from .prompt_node import get_prompt_node
+
+from haystack.components.fetchers.link_content import LinkContentFetcher
+from haystack.components.converters import HTMLToDocument
+from haystack.components.preprocessors import DocumentSplitter
+from haystack.components.rankers import TransformersSimilarityRanker
+from haystack.components.builders.prompt_builder import PromptBuilder
+from haystack import Pipeline
+from haystack.components.generators import HuggingFaceLocalGenerator
 
 class QAChatbot:
     def __init__(self):
-        self.document_store = get_document_store()
-        self.retriever = get_retriever(self.document_store)
-        self.prompt_node = get_prompt_node()
-        self.pipe = self._create_pipeline()
+        self.pipeline = self._create_pipeline()
 
     def _create_pipeline(self):
-        pipe = Pipeline()
-        pipe.add_node(component=self.retriever, name="Retriever", inputs=["Query"])
-        pipe.add_node(component=self.prompt_node, name="PromptNode", inputs=["Retriever"])
-        return pipe
+        # web_retriever = WebRetriever()
+        fetcher = LinkContentFetcher()
+        converter = HTMLToDocument()
+        document_splitter = DocumentSplitter(split_by="word", split_length=50)
+        similarity_ranker = TransformersSimilarityRanker(top_k=3)
+        
+        generator = HuggingFaceLocalGenerator(
+            model="google/flan-t5-large",
+            task="text2text-generation",
+            # device=ComponentDevice.from_str("cpu"),  # Use GPU if available, otherwise use "cpu"
+            generation_kwargs={
+                "max_new_tokens": 500, 
+                "temperature": 0.7
+            }
+        )
+        generator.warm_up()
 
-    def add_documents(self, docs):
-        self.document_store.write_documents(docs)
-        self.document_store.update_embeddings(self.retriever)
+        prompt_template = """
+        According to these documents:
 
-    def ask_question(self, question):
-        result = self.pipe.run(query=question, params={"Retriever": {"top_k": 3}})
-        print_answers(result, details="minimum")
+        {% for doc in documents %}
+          {{ doc.content }}
+        {% endfor %}
+
+        Answer the given question: {{question}}
+        Answer:
+        """
+        prompt_builder = PromptBuilder(template=prompt_template)
+
+        pipeline = Pipeline()
+        pipeline.add_component("fetcher", fetcher)
+        pipeline.add_component("converter", converter)
+        pipeline.add_component("splitter", document_splitter)
+        pipeline.add_component("ranker", similarity_ranker)
+        pipeline.add_component("prompt_builder", prompt_builder)
+        pipeline.add_component("generator", generator)
+
+        pipeline.connect("fetcher.streams", "converter.sources")
+        pipeline.connect("converter.documents", "splitter.documents")
+        pipeline.connect("splitter.documents", "ranker.documents")
+        pipeline.connect("ranker.documents", "prompt_builder.documents")
+        pipeline.connect("prompt_builder.prompt", "generator")
+
+        return pipeline
+
+    def ask_question(self, question, urls):
+        result = self.pipeline.run({
+            "prompt_builder": {"question": question},
+            "ranker": {"query": question},
+            "fetcher": {"urls": urls}
+        })
+
+        for answer in result["generator"]["replies"]:
+            print(answer)
+        
+        return result["generator"]["replies"]
 
     def ingest_pdf(self, file_path):
         docs = []
@@ -89,16 +133,20 @@ class QAChatbot:
 def main():
     chatbot = QAChatbot()
     
-    # Ingest documents from a directory
-    document_directory = "D:\Sujit\documents"  # Replace with the actual path to your document files
-    chatbot.ingest_documents(document_directory)
-
     print("Welcome to the Q&A Chatbot! Type 'exit' to quit.")
     while True:
         user_input = input("You: ")
         if user_input.lower() == 'exit':
             break
-        chatbot.ask_question(user_input)
+        urls = input("Enter URLs to search (comma-separated, or press enter to skip): ").split(',')
+        urls = [url.strip() for url in urls if url.strip()]
+        if not urls:
+            urls = ["https://haystack.deepset.ai/blog/introducing-haystack-2-beta-and-advent"]  
+        
+        answers = chatbot.ask_question(user_input, urls)
+        print("Chatbot:")
+        for answer in answers:
+            print(answer)
 
 if __name__ == "__main__":
     main()
